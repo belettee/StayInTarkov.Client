@@ -14,6 +14,9 @@ using Comfort.Common;
 using Mono.Cecil;
 using StayInTarkov.Coop.SITGameModes;
 using StayInTarkov.Coop.NetworkPacket.Player;
+using Google.FlatBuffers;
+using StayInTarkov.FlatBuffers;
+using StayInTarkov.Coop.Players;
 
 namespace StayInTarkov.Networking
 {
@@ -22,6 +25,7 @@ namespace StayInTarkov.Networking
         public const string PACKET_TAG_METHOD = "m";
         public const string PACKET_TAG_SERVERID = "serverId";
         public const string PACKET_TAG_DATA = "data";
+        public const byte FLATBUFFER_CHANNEL_NUM = 1;
 
         public static event Action<ushort> OnLatencyUpdated;
 
@@ -30,6 +34,37 @@ namespace StayInTarkov.Networking
         static SITGameServerClientDataProcessing()
         {
             Logger = BepInEx.Logging.Logger.CreateLogSource($"{nameof(SITGameServerClientDataProcessing)}");
+        }
+
+        public static void ProcessFlatBuffer(byte[] data)
+        {
+            var buf = new ByteBuffer(data);
+            var packet = StayInTarkov.FlatBuffers.Packet.GetRootAsPacket(buf);
+
+            var coopGameComponent = SITGameComponent.GetCoopGameComponent();
+            if (coopGameComponent == null)
+            {
+                Logger.LogError($"{nameof(ProcessFlatBuffer)}. game component is null");
+                return;
+            }
+
+            switch (packet.PacketType)
+            {
+                case AnyPacket.player_state:
+                    {
+                        var key = packet.Packet_Asplayer_state().ProfileId;
+                        if (coopGameComponent.Players.ContainsKey(key) && coopGameComponent.Players[key] is CoopPlayerClient client)
+                        {
+                            client.ReceivePlayerStatePacket(packet.Packet_Asplayer_state());
+                        }
+                    }
+                    break;
+                default:
+                    {
+                        Logger.LogWarning("unknown FlatBuffer type received");
+                    }
+                    break;
+            }
         }
 
         public static void ProcessPacketBytes(byte[] data, string sData)
@@ -228,44 +263,6 @@ namespace StayInTarkov.Networking
             }
 
             return packet;
-        }
-
-        public static bool ProcessDataListPacket(ref Dictionary<string, object> packet)
-        {
-            var coopGC = SITGameComponent.GetCoopGameComponent();
-            if (coopGC == null)
-                return false;
-
-            if (!packet.ContainsKey("dataList"))
-                return false;
-
-            JArray dataList = JArray.FromObject(packet["dataList"]);
-
-            //Logger.LogDebug(packet.ToJson());   
-
-            foreach (var d in dataList)
-            {
-                // TODO: This needs to be a little more dynamic but for now. This switch will do.
-                // Depending on the method defined, deserialize packet to defined type
-                switch (packet[PACKET_TAG_METHOD].ToString())
-                {
-                    case "PlayerStates":
-                        PlayerStatePacket playerStatePacket = new PlayerStatePacket();
-                        playerStatePacket = (PlayerStatePacket)playerStatePacket.Deserialize((byte[])d);
-                        if (playerStatePacket == null || string.IsNullOrEmpty(playerStatePacket.ProfileId))
-                            continue;
-
-                        if (coopGC.Players.ContainsKey(playerStatePacket.ProfileId))
-                            coopGC.Players[playerStatePacket.ProfileId].ReceivePlayerStatePacket(playerStatePacket);
-
-                        break;
-                    case "Multiple":
-                        break;
-                }
-
-            }
-
-            return true;
         }
     }
 }

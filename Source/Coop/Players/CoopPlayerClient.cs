@@ -9,8 +9,10 @@ using StayInTarkov.Coop.Controllers;
 using StayInTarkov.Coop.Controllers.HandControllers;
 using StayInTarkov.Coop.Matchmaker;
 using StayInTarkov.Coop.NetworkPacket;
+using StayInTarkov.Coop.NetworkPacket.FlatBuffers;
 using StayInTarkov.Coop.NetworkPacket.Player;
 using StayInTarkov.Coop.NetworkPacket.Player.Proceed;
+using StayInTarkov.FlatBuffers;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -26,8 +28,8 @@ namespace StayInTarkov.Coop.Players
     {
         public override ManualLogSource BepInLogger { get; } = BepInEx.Logging.Logger.CreateLogSource(nameof(CoopPlayerClient));
 
-        public PlayerStatePacket LastState { get; set; }// = new PlayerStatePacket();
-        public PlayerStatePacket NewState { get; set; }// = new PlayerStatePacket();
+        public PlayerState LastState { get; set; }
+        public PlayerState NewState { get; set; }
 
         public ConcurrentQueue<PlayerPostProceedDataSyncPacket> ReplicatedPostProceedData { get; } = new ();
 
@@ -91,21 +93,9 @@ namespace StayInTarkov.Coop.Players
             BepInLogger.LogDebug($"{nameof(CoopPlayerClient)}:{nameof(KillMe)}");
         }
 
-        DateTime? LastRPSP = null;
-
-        public override void ReceivePlayerStatePacket(PlayerStatePacket playerStatePacket)
+        public void ReceivePlayerStatePacket(PlayerState state)
         {
-            NewState = playerStatePacket;
-            //BepInLogger.LogInfo($"{nameof(ReceivePlayerStatePacket)}:Packet took {DateTime.Now - new DateTime(long.Parse(NewState.TimeSerializedBetter))}.");
-
-            //BepInLogger.LogInfo(NewState.ToJson());
-
-            if (LastRPSP == null)
-                LastRPSP = DateTime.Now;
-
-            //BepInLogger.LogInfo($"Time between {nameof(ReceivePlayerStatePacket)} {DateTime.Now - LastRPSP.Value}");
-
-            LastRPSP = DateTime.Now;
+            NewState = state;
         }
 
         public Queue<ISITPacket> ReceivedPackets = new Queue<ISITPacket>();
@@ -132,131 +122,42 @@ namespace StayInTarkov.Coop.Players
                         Proceed(meds, medsPacket.BodyPart, null, medsPacket.AnimationVariant, medsPacket.Scheduled);
                     }
                 }
-                //if (packet is PlayerPostProceedDataSyncPacket postProceedDataSyncPacket)
-                //{
-                //    BepInLogger.LogDebug($"{nameof(Update)}:{nameof(ReceivedPackets)}:Process:{packet.GetType().Name}");
-
-                //    if (ItemFinder.TryFindItem(postProceedDataSyncPacket.ItemId, out Item item))
-                //    {
-                //        BepInLogger.LogDebug($"{nameof(Update)}:{nameof(ReceivedPackets)}:Process:{packet.GetType().Name}:Item:{item}");
-                //        BepInLogger.LogDebug($"{nameof(Update)}:{nameof(ReceivedPackets)}:Process:{packet.GetType().Name}:packet:{packet}");
-                //        var shouldRemoveItem = false;
-                //        if (item is MedsClass meds)
-                //        {
-                //            if (meds.MedKitComponent != null)
-                //            {
-                //                meds.MedKitComponent.HpResource = postProceedDataSyncPacket.NewValue;
-                //                shouldRemoveItem = (meds.MedKitComponent.HpResource <= 0);
-                //            }
-                //            // one time use
-                //            else
-                //            {
-                //                shouldRemoveItem = true;
-                //            }
-                //        }
-                //        if (item is FoodClass food)
-                //        {
-                //            if (food.FoodDrinkComponent != null)
-                //            {
-                //                food.FoodDrinkComponent.HpPercent = postProceedDataSyncPacket.NewValue;
-                //                shouldRemoveItem = (food.FoodDrinkComponent.HpPercent <= 0);
-
-                //            }
-                //            // one time use
-                //            else
-                //            {
-                //                shouldRemoveItem = true;
-                //            }
-                //        }
-
-                //        item.RaiseRefreshEvent();
-
-                //        //base.DropCurrentController(() => { }, false, null);
-                //        //var medsController = HandsController as MedsController;
-                //        //if (medsController != null)
-                //        {
-                //                if (shouldRemoveItem)
-                //                {
-                //                    BepInLogger.LogDebug($"Discard Requested {item}");
-                //                    var discardAttempt = ItemMovementHandler.Discard(item, this._inventoryController, true, false);
-                //                    if (discardAttempt.Succeeded)
-                //                        RemoveItem(item);
-                //                    else
-                //                    {
-                //                        BepInLogger.LogError($"Unable to Discard {item}. Reason: {discardAttempt.Error}");
-                //                    }
-                //                }
-                //                else
-                //                {
-                //                    BepInLogger.LogDebug($"Not Discard {item}. Reason: Not Requested");
-                //                }
-                //        }
-
-
-                //    }
-                //}
             }
 
-
-
+            // FIXME(belette) only do this when a new network update has been received (use high watermark timestamp)
+            //                since Update() happens more often than network updates.
             // Update the Health parts of this character using the packets from the Player State
             UpdatePlayerHealthByPlayerState();
         }
 
         private void UpdatePlayerHealthByPlayerState()
         {
-            if (NewState == null)
-                return;
-
-            if (NewState.PlayerHealth == null)
-                return;
-
-            var bodyPartDictionary = GetBodyPartDictionary(this);
-            if (bodyPartDictionary == null)
+            if (NewState.Empty())
             {
-                BepInLogger.LogError($"{nameof(CoopPlayerClient)}:Unable to obtain BodyPartDictionary");
                 return;
             }
 
-            foreach (var bodyPartPacket in NewState.PlayerHealth.BodyParts)
+            var bodyPartDictionary = PlayerHealthController?.Dictionary_0;
+            if (bodyPartDictionary == null)
             {
-                if (bodyPartPacket.BodyPart == EBodyPart.Common)
+                BepInLogger.LogError($"{nameof(CoopPlayerClient)}: could not retrieve bodyPartDictionary");
+                return;
+            }
+
+            foreach (EBodyPart part in Enum.GetValues(typeof(EBodyPart)))
+            {
+                if (part == EBodyPart.Common)
                     continue;
 
-                if (bodyPartDictionary.ContainsKey(bodyPartPacket.BodyPart))
+                if (bodyPartDictionary.ContainsKey(part))
                 {
-                    //BepInLogger.LogInfo($"{nameof(Update)} set bodyPart current {bodyPartPacket.ToJson()}");
-                    bodyPartDictionary[bodyPartPacket.BodyPart].Health.Current = bodyPartPacket.Current;
+                    bodyPartDictionary[part].Health.Current = NewState.BodyPartsHealth.Value.Parts((byte)part).Current;
                 }
                 else
                 {
-                    //BepInLogger.LogError($"{nameof(CoopPlayerClient)}:Unable to find {bodyPartPacket.BodyPart} in BodyPartDictionary {bodyPartDictionary.Keys.ToJson()}");
+                    BepInLogger.LogError($"{nameof(CoopPlayerClient)}: could not find {part} in dictionary {bodyPartDictionary.Keys.ToJson()}");
                 }
             }
-               
-        }
-
-        private Dictionary<EBodyPart, BodyPartState> GetBodyPartDictionary(EFT.Player player)
-        {
-            try
-            {
-                var bodyPartDict
-                = ReflectionHelpers.GetFieldOrPropertyFromInstance<Dictionary<EBodyPart, BodyPartState>>
-                (player.PlayerHealthController, "Dictionary_0", false);
-                if (bodyPartDict == null)
-                {
-                    Logger.LogError($"Could not retreive {player.ProfileId}'s Health State Dictionary");
-                    return null;
-                }
-                //Logger.LogInfo(bodyPartDict.ToJson());
-                return bodyPartDict;
-            }
-            catch (Exception)
-            {
-
-            }
-
-            return null;
         }
 
         new void LateUpdate()
@@ -276,12 +177,14 @@ namespace StayInTarkov.Coop.Players
             }
             ComplexLateUpdate(EUpdateQueue.Update, DeltaTime);
 
-            if (LastState == null)
+            if (LastState.Empty())
+            {
                 return;
+            }
 
             if (LastState.LinearSpeed > 0.25)
             {
-                Move(LastState.InputDirection);
+                Move(new Vector2(LastState.InputDirection.Value.X, LastState.InputDirection.Value.Y));
             }
 
             ///
@@ -350,11 +253,11 @@ namespace StayInTarkov.Coop.Players
                 //_raycastHitCube.transform.position = hit.point;
                  
                 // If the guy is further than 40m away. Use the Teleportation system.
-                if (NewState != null && distanceFromCamera > 40)
+                if (!NewState.Empty() && distanceFromCamera > 40)
                 {
-                    Teleport(NewState.Position);
-                    this.Position = NewState.Position;
-                    this.Rotation = NewState.Rotation;
+                    this.Position = NewState.Position.Value.Unity();
+                    this.Rotation = NewState.Rotation.Value.Unity();
+                    Teleport(this.Position);
                     //BepInLogger.LogDebug($"Teleporting {ProfileId}");
                     _isTeleporting = true;
                 }
@@ -395,23 +298,23 @@ namespace StayInTarkov.Coop.Players
             if (MovementContext == null)
                 return;
 
-            if (NewState == null)
+            if (NewState.Empty())
                 return;
 
-            if (LastState == null)
+            if (LastState.Empty())
                 LastState = NewState;
 
             var InterpolationRatio = Time.deltaTime * 5;
 
-            Rotation = new Vector2(Mathf.LerpAngle(Yaw, NewState.Rotation.x, InterpolationRatio), Mathf.Lerp(Pitch, NewState.Rotation.y, InterpolationRatio));
+            Rotation = new Vector2(Mathf.LerpAngle(Yaw, NewState.Rotation.Value.X, InterpolationRatio), Mathf.Lerp(Pitch, NewState.Rotation.Value.Y, InterpolationRatio));
 
-            HeadRotation = Vector3.Lerp(HeadRotation, NewState.HeadRotation, InterpolationRatio);
-            ProceduralWeaponAnimation.SetHeadRotation(Vector3.Lerp(LastState.HeadRotation, NewState.HeadRotation, InterpolationRatio));
-            MovementContext.PlayerAnimatorSetMovementDirection(Vector2.Lerp(LastState.MovementDirection, NewState.MovementDirection, Time.deltaTime));
-            MovementContext.PlayerAnimatorSetDiscreteDirection(BSGDirectionalHelpers.ConvertToMovementDirection(NewState.MovementDirection));
+            HeadRotation = Vector3.Lerp(HeadRotation, NewState.HeadRotation.Value.Unity(), InterpolationRatio);
+            ProceduralWeaponAnimation.SetHeadRotation(Vector3.Lerp(LastState.HeadRotation.Value.Unity(), NewState.HeadRotation.Value.Unity(), InterpolationRatio));
+            MovementContext.PlayerAnimatorSetMovementDirection(Vector2.Lerp(LastState.MovementDirection.Value.Unity(), NewState.MovementDirection.Value.Unity(), Time.deltaTime));
+            MovementContext.PlayerAnimatorSetDiscreteDirection(BSGDirectionalHelpers.ConvertToMovementDirection(NewState.MovementDirection.Value.Unity()));
 
             EPlayerState currentPlayerState = MovementContext.CurrentState.Name;
-            EPlayerState eplayerState = NewState.State;
+            EPlayerState eplayerState = (EPlayerState)NewState.State;
 
             if (eplayerState == EPlayerState.ClimbUp || eplayerState == EPlayerState.ClimbOver || eplayerState == EPlayerState.VaultingLanding || eplayerState == EPlayerState.VaultingFallDown)
             {
@@ -436,7 +339,12 @@ namespace StayInTarkov.Coop.Players
                 MovementContext.IsInPronePose = true;
             }
 
-            Physical.SerializationStruct = NewState.Stamina;
+            Physical.SerializationStruct = new Physical.PhysicalStamina
+            {
+                StaminaExhausted = NewState.StaminaExhausted,
+                OxygenExhausted = NewState.OxygenExhausted,
+                HandsExhausted = NewState.HandsExhausted
+            };
             MovementContext.SetTilt(Mathf.Round(NewState.Tilt)); // Round the float due to byte converting error...
             CurrentManagedState.SetStep(NewState.Step);
             MovementContext.PlayerAnimatorEnableSprint(NewState.IsSprinting);
@@ -464,16 +372,16 @@ namespace StayInTarkov.Coop.Players
 
             if (MovementContext == null) return;
 
-            if (NewState == null) return;
+            if (NewState.Empty()) return;
 
-            if (LastState == null) return;
+            if (LastState.Empty()) return;
 
-            Vector3 lerpedMovement = Vector3.Lerp(MovementContext.TransformPosition, NewState.Position, Time.deltaTime * 1.33f);
+            Vector3 lerpedMovement = Vector3.Lerp(MovementContext.TransformPosition, NewState.Position.Value.Unity(), Time.deltaTime * 1.33f);
             CharacterController.Move((lerpedMovement + MovementContext.PlatformMotion) - MovementContext.TransformPosition, Time.deltaTime);
 
             if (!IsInventoryOpened && LastState.LinearSpeed > 0.25)
             {
-                Move(LastState.InputDirection);
+                Move(LastState.InputDirection.Value.Unity());
             }
         }
 

@@ -76,7 +76,8 @@ namespace StayInTarkov.Networking
                 AutoRecycle = true,
                 IPv6Enabled = false,
                 EnableStatistics = true,
-                NatPunchEnabled = false
+                NatPunchEnabled = false,
+                ChannelsCount = 2
             };
 
             // ===============================================================
@@ -152,7 +153,7 @@ namespace StayInTarkov.Networking
         {
             //Logger.LogInfo("[Server] OnNetworkReceive");
             var bytes = reader.GetRemainingBytes();
-            _netServer.SendToAll(bytes, deliveryMethod);
+            _netServer.SendToAll(bytes, channelNumber, deliveryMethod);
         }
 
         //private void OnInformationPacketReceived(InformationPacket packet, NetPeer peer)
