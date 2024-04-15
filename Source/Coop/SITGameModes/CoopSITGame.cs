@@ -1232,7 +1232,7 @@ namespace StayInTarkov.Coop.SITGameModes
 
                 //Logger.LogDebug(InfiltrationPoint);
 
-                ExfiltrationControllerClass.Instance.InitAllExfiltrationPoints(Location_0.exits, justLoadSettings: SITMatchmaking.IsClient, "");
+                ExfiltrationControllerClass.Instance.InitAllExfiltrationPoints(Location_0.exits, justLoadSettings: false, "");
                 ExfiltrationPoint[] exfilPoints = ExfiltrationControllerClass.Instance.EligiblePoints(Profile_0);
                 GameUi.TimerPanel.SetTime(DateTime.UtcNow, Profile_0.Info.Side, GameTimer.SessionSeconds(), exfilPoints);
                 foreach (ExfiltrationPoint exfiltrationPoint in exfilPoints)
@@ -1601,12 +1601,10 @@ namespace StayInTarkov.Coop.SITGameModes
                 FPSCamera.Instance.SetOcclusionCullingEnabled(Location_0.OcculsionCullingEnabled);
                 FPSCamera.Instance.IsActive = false;
             }
-
             await SpawnLoot(location);
             await WaitForPlayersToSpawn();
             await WaitForPlayersToBeReady();
             await WaitForHostToStart();
-
             method_5(botsSettings, SpawnSystem, runCallback);
         }
 
