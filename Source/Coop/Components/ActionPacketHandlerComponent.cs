@@ -36,10 +36,6 @@ namespace StayInTarkov.Coop.Components
         public ConcurrentDictionary<string, CoopPlayer> Players => CoopGameComponent.Players;
         public ManualLogSource Logger { get; private set; }
 
-        private List<string> RemovedFromAIPlayers = new();
-
-        private CoopSITGame CoopGame { get; } = (CoopSITGame)Singleton<AbstractGame>.Instance;
-
         private SITGameComponent CoopGameComponent { get; set; }
 
         void Awake()
@@ -48,29 +44,19 @@ namespace StayInTarkov.Coop.Components
             // Create a BepInEx Logger for ActionPacketHandlerComponent
             Logger = BepInEx.Logging.Logger.CreateLogSource("ActionPacketHandlerComponent");
             Logger.LogDebug("Awake");
-
-            CoopGameComponent = CoopPatches.CoopGameComponentParent.GetComponent<SITGameComponent>();
             ActionPacketsMovement = new();
         }
 
         void Start()
         {
-            CoopGameComponent = CoopPatches.CoopGameComponentParent.GetComponent<SITGameComponent>();
+            CoopGameComponent = this.gameObject.GetComponent<SITGameComponent>();
             ActionPacketsMovement = new();
         }
 
-        //void Update()
-        //{
-        //    ProcessActionPackets();
-        //}
-
-        void LateUpdate()
+        void Update()
         {
             ProcessActionPackets();
         }
-
-        
-
 
         public static ActionPacketHandlerComponent GetThisComponent()
         {
@@ -139,7 +125,6 @@ namespace StayInTarkov.Coop.Components
 #endif
                     if (!ProcessLastActionDataPacket(result))
                     {
-                        //ActionPackets.Add(result);
                         continue;
                     }
 
@@ -176,67 +161,7 @@ namespace StayInTarkov.Coop.Components
             }
 
 
-            //if (ActionPacketsDamage != null && ActionPacketsDamage.Count > 0)
-            //{
-            //    Stopwatch stopwatchActionPacketsDamage = Stopwatch.StartNew();
-            //    while (ActionPacketsDamage.TryTake(out var packet))
-            //    {
-            //        if (!packet.ContainsKey("profileId"))
-            //            continue;
-
-            //        var profileId = packet["profileId"].ToString();
-
-            //        // The person is missing. Lets add this back until they exist
-            //        if (!CoopGameComponent.Players.ContainsKey(profileId))
-            //        {
-            //            //ActionPacketsDamage.Add(packet);
-            //            continue;
-            //        }
-
-            //        var playerKVP = CoopGameComponent.Players[profileId];
-            //        if (playerKVP == null)
-            //            continue;
-
-            //        var coopPlayer = (CoopPlayer)playerKVP;
-            //        coopPlayer.ReceiveDamageFromServer(packet);
-            //    }
-            //    if (stopwatchActionPacketsDamage.ElapsedMilliseconds > 1)
-            //    {
-            //        Logger.LogDebug($"ActionPacketsDamage took {stopwatchActionPacketsDamage.ElapsedMilliseconds}ms to process!");
-            //    }
-            //}
-
-
             return;
-        }
-
-        bool ProcessSITActionPackets(ISITPacket packet)
-        {
-            //Logger.LogInfo($"{nameof(ProcessSITActionPackets)} received {packet.GetType()}");
-
-            packet.Process();
-
-            //var playerPacket = packet as BasePlayerPacket;
-            //if (playerPacket != null)
-            //{
-            //    if (!Players.ContainsKey(playerPacket.ProfileId))
-            //        return false;
-
-            //    Players[playerPacket.ProfileId].ProcessSITPacket(playerPacket);
-            //}
-            //else
-            //{
-            //    // Process Player States Packet
-            //    if(packet is PlayerStatesPacket playerStatesPacket)
-            //    {
-            //        foreach(var psp in playerStatesPacket.PlayerStates)
-            //        {
-            //            ProcessSITActionPackets(psp);
-            //        }
-            //    }
-            //}
-
-            return false;
         }
 
         bool ProcessLastActionDataPacket(Dictionary<string, object> packet)
@@ -360,39 +285,6 @@ namespace StayInTarkov.Coop.Components
             return true;
         }
 
-        async Task WaitForPlayerAndProcessPacket(string profileId, Dictionary<string, object> packet)
-        {
-            // Start the timer.
-            var startTime = DateTime.Now;
-            var maxWaitTime = TimeSpan.FromMinutes(2);
-
-            while (true)
-            {
-                // Check if maximum wait time has been reached.
-                if (DateTime.Now - startTime > maxWaitTime)
-                {
-                    Logger.LogError($"{DateTime.Now.ToString("MM/dd/yyyy HH:mm:ss.fff")}: WaitForPlayerAndProcessPacket waited for {maxWaitTime.TotalMinutes} minutes, but player {profileId} still did not exist after timeout period.");
-                    return;
-                }
-
-                if (Players == null)
-                    continue;
-
-                var registeredPlayers = Singleton<GameWorld>.Instance.RegisteredPlayers;
-
-                // If the player now exists, process the packet and end the thread.
-                if (Players.Any(x => x.Key == profileId) || registeredPlayers.Any(x => x.Profile.ProfileId == profileId))
-                {
-                    // Logger.LogDebug($"{DateTime.Now.ToString("MM/dd/yyyy HH:mm:ss.fff")}: WaitForPlayerAndProcessPacket waited for {(DateTime.Now - startTime).TotalSeconds}s");
-                    ProcessPlayerPacket(packet);
-                    return;
-                }
-
-                // Wait for a short period before checking again.
-                await Task.Delay(1000);
-            }
-        }
-
         void ReplicateAirdrop(Dictionary<string, object> packet)
         {
             if (!Singleton<SITAirdropsManager>.Instantiated)
@@ -416,47 +308,6 @@ namespace StayInTarkov.Coop.Components
                 packet["result"].ToString().SITParseJson<AirdropLootResultModel>(),
                 packet["config"].ToString().SITParseJson<AirdropConfigModel>());
         }
-
-        //void ReplicateRaidTimer(Dictionary<string, object> packet)
-        //{
-        //    SITGameComponent coopGameComponent = SITGameComponent.GetCoopGameComponent();
-        //    if (coopGameComponent == null)
-        //        return;
-
-        //    if (SITMatchmaking.IsClient)
-        //    {
-        //        var sessionTime = new TimeSpan(long.Parse(packet["sessionTime"].ToString()));
-        //        Logger.LogDebug($"RaidTimer: Remaining session time {sessionTime.TraderFormat()}");
-
-        //        if (coopGameComponent.LocalGameInstance is CoopSITGame coopGame)
-        //        {
-        //            var gameTimer = coopGame.GameTimer;
-        //            if (gameTimer.StartDateTime.HasValue && gameTimer.SessionTime.HasValue)
-        //            {
-        //                if (gameTimer.PastTime.TotalSeconds < 3)
-        //                    return;
-
-        //                var timeRemain = gameTimer.PastTime + sessionTime;
-
-        //                if (Math.Abs(gameTimer.SessionTime.Value.TotalSeconds - timeRemain.TotalSeconds) < 5)
-        //                    return;
-
-        //                Logger.LogInfo($"RaidTimer: New SessionTime {timeRemain.TraderFormat()}");
-        //                gameTimer.ChangeSessionTime(timeRemain);
-
-        //                MainTimerPanel mainTimerPanel = ReflectionHelpers.GetFieldOrPropertyFromInstance<MainTimerPanel>(coopGame.GameUi.TimerPanel, "_mainTimerPanel", false);
-        //                if (mainTimerPanel != null)
-        //                {
-        //                    FieldInfo extractionDateTimeField = ReflectionHelpers.GetFieldFromType(typeof(TimerPanel), "dateTime_0");
-        //                    extractionDateTimeField.SetValue(mainTimerPanel, gameTimer.StartDateTime.Value.AddSeconds(timeRemain.TotalSeconds));
-
-        //                    MethodInfo UpdateTimerMI = ReflectionHelpers.GetMethodForType(typeof(MainTimerPanel), "UpdateTimer");
-        //                    UpdateTimerMI.Invoke(mainTimerPanel, new object[] { });
-        //                }
-        //            }
-        //        }
-        //    }
-        //}
 
         void ReplicateTimeAndWeather(Dictionary<string, object> packet)
         {
