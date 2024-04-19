@@ -173,7 +173,8 @@ namespace StayInTarkov.Networking
         void INetEventListener.OnNetworkReceive(NetPeer peer, NetPacketReader reader, byte channelNumber, DeliveryMethod deliveryMethod)
         {
             var bytes = reader.GetRemainingBytes();
-            Singleton<SITGameServerClientDataProcessing>.Instance.ProcessPacketBytes(bytes);
+            var gameComp = GetComponent<SITGameComponent>();
+            SITGameServerClientDataProcessing.ProcessPacketBytes(GetComponent<SITGameComponent>(), bytes);
         }
 
         void OnDestroy()

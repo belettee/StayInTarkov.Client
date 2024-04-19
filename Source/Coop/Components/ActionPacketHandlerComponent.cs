@@ -49,7 +49,7 @@ namespace StayInTarkov.Coop.Components
 
         void Start()
         {
-            CoopGameComponent = this.gameObject.GetComponent<SITGameComponent>();
+            CoopGameComponent = GetComponent<SITGameComponent>();
             ActionPacketsMovement = new();
         }
 

@@ -119,9 +119,7 @@ namespace StayInTarkov.Networking
             PeriodicallySendPing();
             //PeriodicallySendPooledData();
 
-            var processor = StayInTarkovPlugin.Instance.GetOrAddComponent<SITGameServerClientDataProcessing>();
-            Singleton<SITGameServerClientDataProcessing>.Create(processor);
-            Comfort.Common.Singleton<SITGameServerClientDataProcessing>.Instance.OnLatencyUpdated += OnLatencyUpdated;
+            SITGameServerClientDataProcessing.OnLatencyUpdated += OnLatencyUpdated;
 
             HttpClient = new HttpClient();
             foreach (var item in GetHeaders())
@@ -139,12 +137,15 @@ namespace StayInTarkov.Networking
             PooledJsonToPostToUrl.Add(new KeyValuePair<string, string>("/coop/connect", "{}"));
         }
 
+        private SITGameComponent GameComp;
+
         private Profile MyProfile { get; set; }
 
         //private HashSet<string> WebSocketPreviousReceived { get; set; }
 
-        public void WebSocketCreate(Profile profile)
+        public void WebSocketCreate(SITGameComponent gameComp, Profile profile)
         {
+            GameComp = gameComp;
             MyProfile = profile;
 
             Logger.LogDebug("WebSocketCreate");
@@ -185,6 +186,7 @@ namespace StayInTarkov.Networking
                 WebSocket.Close(WebSocketSharp.CloseStatusCode.Normal);
                 WebSocket = null;
             }
+            GameComp = null;
         }
 
         public async void PingAsync()
@@ -222,7 +224,7 @@ namespace StayInTarkov.Networking
             Logger.LogError($"{nameof(WebSocket_OnError)}: {e.Exception}");
             WebSocket_OnError();
             WebSocketClose();
-            WebSocketCreate(MyProfile);
+            WebSocketCreate(GameComp, MyProfile);
         }
 
         private void WebSocket_OnError()
@@ -244,7 +246,7 @@ namespace StayInTarkov.Networking
             Interlocked.Add(ref BytesReceived, e.RawData.Length);
             GC.AddMemoryPressure(e.RawData.Length);
 
-            Comfort.Common.Singleton<SITGameServerClientDataProcessing>.Instance.ProcessPacketBytes(e.RawData);
+            SITGameServerClientDataProcessing.ProcessPacketBytes(GameComp, e.RawData);
             GC.RemoveMemoryPressure(e.RawData.Length);
         }
 
@@ -914,7 +916,7 @@ namespace StayInTarkov.Networking
         {
             ProfileId = null;
             RemoteEndPoint = null;
-            Comfort.Common.Singleton<SITGameServerClientDataProcessing>.Instance.OnLatencyUpdated -= OnLatencyUpdated;
+            SITGameServerClientDataProcessing.OnLatencyUpdated -= OnLatencyUpdated;
         }
     }
 }

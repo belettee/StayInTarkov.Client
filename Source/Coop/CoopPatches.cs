@@ -140,8 +140,6 @@ namespace StayInTarkov.Coop
             //GCHelpers.DisableGC(true);
             //GCHelpers.ClearGarbage(true, true);
 
-            AkiBackendCommunication.Instance.WebSocketClose();
-
             EnableDisablePatches();
         }
     }
